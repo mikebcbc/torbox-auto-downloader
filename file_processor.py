@@ -12,6 +12,22 @@ import threading
 logger = logging.getLogger(__name__)
 
 
+def _format_time(seconds):
+    """
+    Formats time in seconds to MM:SS format.
+
+    Args:
+        seconds (float): Time in seconds.
+
+    Returns:
+        str: Formatted time string (e.g., "05:23", "123:45").
+    """
+    seconds = int(seconds)
+    minutes = seconds // 60
+    secs = seconds % 60
+    return f"{minutes:02d}:{secs:02d}"
+
+
 class DownloadStats:
     """
     Manages and displays download statistics.
@@ -101,7 +117,7 @@ class DownloadStats:
 
         stats = [
             f"File: {self.filename}",
-            f"Elapsed: {humanize.naturaldelta(elapsed)}",
+            f"Elapsed: {_format_time(elapsed)}",
         ]
 
         if progress is not None:
@@ -116,7 +132,7 @@ class DownloadStats:
             stats.append(f"Total: {humanize.naturalsize(self.total_size)}")
         stats.append(f"Speed: {humanize.naturalsize(speed)}/s")
         if eta:
-            stats.append(f"ETA: {humanize.naturaldelta(eta)}")
+            stats.append(f"ETA: {_format_time(eta)}")
 
         logger.info(" | ".join(stats))
 
@@ -196,7 +212,7 @@ class ExtractStats:
 
         stats = [
             f"Extracting: {self.zip_path.name}",
-            f"Elapsed: {humanize.naturaldelta(elapsed)}",
+            f"Elapsed: {_format_time(elapsed)}",
         ]
 
         # if progress is not None:
@@ -436,7 +452,7 @@ class FileProcessor:
             size = humanize.naturalsize(extract_stats.extracted_size)
             avg_speed = humanize.naturalsize(extract_stats.get_speed()) + "/s"
             logger.info(
-                f"Extraction complete: {zip_path.name} | Files: {extract_stats.extracted_files} | Size: {size} | Time: {humanize.naturaldelta(elapsed)} | Avg speed: {avg_speed}"
+                f"Extraction complete: {zip_path.name} | Files: {extract_stats.extracted_files} | Size: {size} | Time: {_format_time(elapsed)} | Avg speed: {avg_speed}"
             )
             zip_path.unlink()  # Delete ZIP after extraction
             logger.info(f"Deleted ZIP file: {zip_path}")
