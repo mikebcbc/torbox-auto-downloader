@@ -5,6 +5,7 @@ import os # Import os to access environment variables
 from config import Config
 from watcher import TorBoxWatcherApp
 import web_server # Import the web server module
+from version import __version__, __app_name__
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,11 @@ def main():
     """
     watcher_app = None # Initialize to None
     watcher_thread = None
+
+    # Display version information
+    logger.info("=" * 60)
+    logger.info(f"{__app_name__} v{__version__}")
+    logger.info("=" * 60)
 
     try:
         Config.validate()
