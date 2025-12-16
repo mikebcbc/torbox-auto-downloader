@@ -83,6 +83,37 @@ class TorBoxWatcherApp:
                 except Exception as e:
                     logger.error(f"Error deleting file {file_path}: {e}")
 
+    def _extract_identifier_from_response(self, response_data, download_type):
+        """
+        Extracts download ID and hash from API response.
+
+        Args:
+            response_data (dict): API response data.
+            download_type (str): Either "torrent" or "usenet".
+
+        Returns:
+            tuple: (identifier, download_id, download_hash)
+        """
+        download_id = None
+        download_hash = None
+        
+        if "data" in response_data and isinstance(response_data["data"], dict):
+            if download_type == "torrent":
+                if "torrent_id" in response_data["data"]:
+                    download_id = response_data["data"]["torrent_id"]
+                if "hash" in response_data["data"]:
+                    download_hash = response_data["data"]["hash"]
+            else:  # usenet
+                if "usenetdownload_id" in response_data["data"]:
+                    download_id = response_data["data"]["usenetdownload_id"]
+                elif "id" in response_data["data"]:
+                    download_id = response_data["data"]["id"]
+                if "hash" in response_data["data"]:
+                    download_hash = response_data["data"]["hash"]
+        
+        identifier = download_id if download_id else download_hash
+        return identifier, download_id, download_hash
+
     def process_torrent_file(self, file_path: Path):
         """
         Processes a torrent file or magnet link.
@@ -113,28 +144,21 @@ class TorBoxWatcherApp:
 
             logger.debug(f"Torrent API response: {json.dumps(response_data)}")
 
-            download_id = None
-            torrent_hash = None
-            if "data" in response_data and isinstance(response_data["data"], dict):
-                if "torrent_id" in response_data["data"]:
-                    download_id = response_data["data"]["torrent_id"]
-                if "hash" in response_data["data"]:
-                    torrent_hash = response_data["data"]["hash"]
+            identifier, download_id, download_hash = self._extract_identifier_from_response(
+                response_data, "torrent"
+            )
 
-            if download_id or torrent_hash:
-                identifier = download_id if download_id else torrent_hash
-                logger.info(
-                    f"Successfully submitted torrent: {file_name}, ID: {identifier}"
+            if identifier:
+                logger.info(f"Successfully submitted torrent: {file_name}, ID: {identifier}")
+                success = self.download_tracker.track_download(
+                    identifier=identifier,
+                    download_type="torrent",
+                    file_stem=file_path.stem,
+                    original_file=file_path,
+                    download_id=download_id,
+                    download_hash=download_hash
                 )
-                self.download_tracker.track_download(
-                    identifier,
-                    "torrent",
-                    file_path.stem,
-                    file_path,
-                    download_id,
-                    torrent_hash,
-                )
-                return True, file_path, identifier
+                return success, file_path, identifier
             else:
                 logger.error(
                     f"Failed to get download ID for: {file_name}. Response: {json.dumps(response_data)}"
@@ -145,6 +169,81 @@ class TorBoxWatcherApp:
             logger.error(f"Error processing torrent file {file_name}: {e}")
             return False, file_path, None
 
+    def _check_download_status_common(self, identifier, download_type):
+        """
+        Common logic for checking download status (torrent or usenet).
+
+        Args:
+            identifier: The identifier of the download.
+            download_type: Either "torrent" or "usenet".
+
+        Returns:
+            bool: True if download is ready and request was initiated, False otherwise.
+        """
+        tracking_info = self.download_tracker.get_download_info(identifier)
+        if not tracking_info:
+            logger.warning(f"No tracking info found for {download_type} identifier: {identifier}")
+            return False
+
+        # Prefer the specific API 'id' if stored, otherwise use the identifier
+        query_id = tracking_info.get("id") or identifier
+        query_param = f"id={query_id}"
+
+        try:
+            logger.debug(f"Checking {download_type} status using query: {query_param}")
+            
+            # Call appropriate API method
+            if download_type == "torrent":
+                status_data = self.api_client.get_torrent_list(query_param)
+            else:  # usenet
+                status_data = self.api_client.get_usenet_list(query_param)
+            
+            logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
+
+            # Extract download data from response
+            download_data = None
+            if "data" in status_data:
+                if isinstance(status_data["data"], dict):
+                    download_data = status_data["data"]
+                elif isinstance(status_data["data"], list) and len(status_data["data"]) > 0:
+                    # Find the correct item in the list
+                    for item in status_data["data"]:
+                        api_id_match = tracking_info.get("id") and str(item.get("id", "")) == str(tracking_info.get("id"))
+                        hash_match = tracking_info.get("hash") and item.get("hash") == tracking_info.get("hash")
+                        identifier_hash_match = not tracking_info.get("id") and item.get("hash") == identifier
+
+                        if api_id_match or hash_match or identifier_hash_match:
+                            download_data = item
+                            break
+
+            if download_data:
+                download_state = download_data.get("download_state", "")
+                progress = download_data.get("progress", 0)
+                progress_percentage = float(progress) * 100
+                size_formatted = download_data.get("size", 0)
+
+                logger.info(
+                    f"{download_type.capitalize()} [{identifier}]: {tracking_info['name']} | "
+                    f"Status: {download_state.upper()} | Progress: {progress_percentage:.1f}% | Size: {size_formatted}"
+                )
+
+                # Check if download is ready
+                if download_data.get("download_present", False):
+                    if download_type == "torrent":
+                        self.request_torrent_download(identifier)
+                    else:  # usenet
+                        self.request_usenet_download(identifier)
+                    return True
+            else:
+                logger.warning(
+                    f"Could not find {download_type} with identifier {identifier} (query_id: {query_id}) in status response."
+                )
+
+        except Exception as e:
+            logger.error(f"Error checking {download_type} status for identifier {identifier}: {e}")
+        
+        return False
+
     def check_torrent_status(self, download_id):
         """
         Checks the status of a torrent download.
@@ -152,105 +251,64 @@ class TorBoxWatcherApp:
         Args:
             download_id: The ID of the torrent download (can be torrent_id or hash).
         """
-        tracking_info = self.download_tracker.get_download_info(download_id)
-        if not tracking_info:
-            logger.warning(f"No tracking info found for download ID: {download_id}")
-            return
+        self._check_download_status_common(download_id, "torrent")
 
-        torrent_id = tracking_info.get("id")
-        query_param = f"id={torrent_id}" if torrent_id else f"id={download_id}"
-
-        try:
-            status_data = self.api_client.get_torrent_list(query_param)
-            logger.debug(f"Torrent status response: {json.dumps(status_data)}")
-
-            torrent_data = None
-            if "data" in status_data:
-                if isinstance(status_data["data"], dict):
-                    torrent_data = status_data["data"]
-                elif (
-                    isinstance(status_data["data"], list)
-                    and len(status_data["data"]) > 0
-                ):
-                    for torrent in status_data["data"]:
-                        if (
-                            torrent_id and str(torrent.get("id", "")) == str(torrent_id)
-                        ) or (
-                            tracking_info.get("hash")
-                            and torrent.get("hash") == tracking_info.get("hash")
-                        ):
-                            torrent_data = torrent
-                            break
-
-            if torrent_data:
-                download_state = torrent_data.get("download_state", "")
-                progress = torrent_data.get("progress", 0)
-                progress_percentage = float(progress) * 100
-                size_formatted = torrent_data.get("size", 0)
-
-                logger.info(
-                    f"Torrent [{download_id}]: {tracking_info['name']} | Status: {download_state.upper()} | Progress: {progress_percentage:.1f}% | Size: {size_formatted}"
-                )
-
-                if torrent_data.get("download_present", False):
-                    self.request_torrent_download(download_id)
-
-            else:
-                logger.warning(
-                    f"Could not find torrent with ID {download_id} in status response."
-                )
-
-        except Exception as e:
-            logger.error(f"Error checking torrent status for ID {download_id}: {e}")
-
-    def request_torrent_download(self, download_id):
+    def _request_download_common(self, identifier, download_type):
         """
-        Requests a download link for a completed torrent.
+        Common logic for requesting download links (torrent or usenet).
 
         Args:
-            download_id: The ID of the torrent download.
+            identifier: The identifier of the download.
+            download_type: Either "torrent" or "usenet".
         """
-        tracking_info = self.download_tracker.get_download_info(download_id)
+        tracking_info = self.download_tracker.get_download_info(identifier)
         if not tracking_info:
             logger.warning(
-                f"No tracking info found for download ID: {download_id} for download request."
+                f"No tracking info found for {download_type} identifier: {identifier} for download request."
             )
             return
 
-        torrent_id = tracking_info.get("id")
-        request_id = torrent_id if torrent_id else download_id
+        # Prefer the specific API 'id' if stored, otherwise use the identifier
+        request_id = tracking_info.get("id") or identifier
 
         try:
-            download_link_data = self.api_client.request_torrent_download_link(
-                request_id
-            )
+            # Call appropriate API method
+            if download_type == "torrent":
+                download_link_data = self.api_client.request_torrent_download_link(request_id)
+            else:  # usenet
+                download_link_data = self.api_client.request_usenet_download_link(request_id)
 
-            if (
-                download_link_data.get("success", False)
-                and "data" in download_link_data
-            ):
+            if download_link_data.get("success", False) and "data" in download_link_data:
                 download_url = download_link_data["data"]
                 logger.info(
-                    f"Got download URL for torrent ID {download_id}: {download_url}"
+                    f"Got download URL for {download_type} identifier {identifier} (request_id: {request_id}): {download_url}"
                 )
-                download_path = (
-                    self.config.DOWNLOAD_DIR / tracking_info["name"]
-                )  # Initial path, filename adjusted in downloader
+                download_path = self.config.DOWNLOAD_DIR / tracking_info["name"]
                 self.file_processor.download_file(
                     download_url,
                     download_path,
                     tracking_info["name"],
-                    download_id,
+                    identifier,
                     self.download_tracker.get_tracked_downloads(),
                     self.active_downloads,
                 )
             else:
                 logger.error(
-                    f"Failed to get download URL for torrent ID {download_id}: {json.dumps(download_link_data)}"
+                    f"Failed to get download URL for {download_type} identifier {identifier} "
+                    f"(request_id: {request_id}): {json.dumps(download_link_data)}"
                 )
 
         except Exception as e:
-            logger.error(f"Error requesting torrent download for ID {download_id}: {e}")
+            logger.error(f"Error requesting {download_type} download for identifier {identifier}: {e}")
+
+    def request_torrent_download(self, identifier):
+        """
+        Requests a download link for a completed torrent.
+
+        Args:
+            identifier: The identifier of the torrent download used for tracking.
+        """
+        self._request_download_common(identifier, "torrent")
 
     def process_nzb_file(self, file_path: Path):
         """
@@ -274,34 +332,21 @@ class TorBoxWatcherApp:
             )
             logger.debug(f"Usenet API response: {json.dumps(response_data)}")
 
-            identifier = None
-            download_id = None
-            download_hash = None
-
-            if "data" in response_data and isinstance(response_data["data"], dict):
-                if "usenetdownload_id" in response_data["data"]:
-                    identifier = response_data["data"]["usenetdownload_id"]
-                    download_id = identifier
-                elif "id" in response_data["data"]:
-                    identifier = response_data["data"]["id"]
-                    download_id = identifier
-                elif "hash" in response_data["data"]:
-                    identifier = response_data["data"]["hash"]
-                    download_hash = identifier
+            identifier, download_id, download_hash = self._extract_identifier_from_response(
+                response_data, "usenet"
+            )
 
             if identifier:
-                logger.info(
-                    f"Successfully submitted NZB: {file_name}, ID: {identifier}"
+                logger.info(f"Successfully submitted NZB: {file_name}, ID: {identifier}")
+                success = self.download_tracker.track_download(
+                    identifier=identifier,
+                    download_type="usenet",
+                    file_stem=file_path.stem,
+                    original_file=file_path,
+                    download_id=download_id,
+                    download_hash=download_hash
                 )
-                self.download_tracker.track_download(
-                    identifier,
-                    "usenet",
-                    file_path.stem,
-                    file_path,
-                    download_id,
-                    download_hash,
-                )
-                return True, file_path, identifier
+                return success, file_path, identifier
             else:
                 logger.error(
                     f"Failed to get download ID or hash for NZB: {file_name}. Response: {json.dumps(response_data)}"
@@ -319,110 +364,16 @@ class TorBoxWatcherApp:
         Args:
             download_id: The ID of the usenet download (can be usenetdownload_id or hash).
         """
-        tracking_info = self.download_tracker.get_download_info(download_id)
-        if not tracking_info:
-            logger.warning(
-                f"No tracking info found for usenet download ID: {download_id}"
-            )
-            return
+        self._check_download_status_common(download_id, "usenet")
 
-        usenet_id = tracking_info.get("id")
-        query_param = f"id={usenet_id}" if usenet_id else f"id={download_id}"
-
-        try:
-            status_data = self.api_client.get_usenet_list(query_param)
-            logger.debug(f"Usenet status response: {json.dumps(status_data)}")
-
-            usenet_data = None
-            if "data" in status_data:
-                if isinstance(status_data["data"], dict):
-                    usenet_data = status_data["data"]
-                elif (
-                    isinstance(status_data["data"], list)
-                    and len(status_data["data"]) > 0
-                ):
-                    for usenet in status_data["data"]:
-                        if (
-                            usenet_id and str(usenet.get("id", "")) == str(usenet_id)
-                        ) or (
-                            tracking_info.get("hash")
-                            and usenet.get("hash") == tracking_info.get("hash")
-                        ):
-                            usenet_data = usenet
-                            break
-
-            if usenet_data:
-                download_state = usenet_data.get("download_state", "")
-                download_present = usenet_data.get("download_present", False)
-                download_finished = usenet_data.get("download_finished", False)
-                progress = usenet_data.get("progress", 0)
-                progress_percentage = float(progress) * 100
-                size_formatted = usenet_data.get("size", 0)
-
-                logger.info(
-                    f"Usenet [{download_id}]: {tracking_info['name']} | Status: {download_state.upper()} | Progress: {progress_percentage:.1f}% | Size: {size_formatted}"
-                )
-
-                if download_present:
-                    self.request_usenet_download(download_id)
-
-            else:
-                logger.warning(
-                    f"Could not find usenet download with ID {download_id} in status response."
-                )
-
-        except Exception as e:
-            logger.error(f"Error checking usenet status for ID {download_id}: {e}")
-
-    def request_usenet_download(self, download_id):
+    def request_usenet_download(self, identifier):
         """
         Requests a download link for a completed usenet download.
 
         Args:
-            download_id: The ID of the usenet download.
+            identifier: The identifier of the usenet download used for tracking.
         """
-        tracking_info = self.download_tracker.get_download_info(download_id)
-        if not tracking_info:
-            logger.warning(
-                f"No tracking info found for usenet ID: {download_id} for download request."
-            )
-            return
-
-        usenet_id = tracking_info.get("id")
-        request_id = usenet_id if usenet_id else download_id
-
-        try:
-            download_link_data = self.api_client.request_usenet_download_link(
-                request_id
-            )
-
-            if (
-                download_link_data.get("success", False)
-                and "data" in download_link_data
-            ):
-                download_url = download_link_data["data"]
-                logger.info(
-                    f"Got download URL for usenet ID {download_id}: {download_url}"
-                )
-                download_path = (
-                    self.config.DOWNLOAD_DIR / tracking_info["name"]
-                )  # Initial path, filename adjusted in downloader
-                self.file_processor.download_file(
-                    download_url,
-                    download_path,
-                    tracking_info["name"],
-                    download_id,
-                    self.download_tracker.get_tracked_downloads(),
-                    self.active_downloads,
-                )
-
-            else:
-                logger.error(
-                    f"Failed to get download URL for usenet ID {download_id}: {json.dumps(download_link_data)}"
-                )
-
-        except Exception as e:
-            logger.error(f"Error requesting usenet download for ID {download_id}: {e}")
+        self._request_download_common(identifier, "usenet")
 
     def check_download_status(self):
         """
@@ -432,20 +383,64 @@ class TorBoxWatcherApp:
         if not tracked_downloads:
             return
 
-        logger.info(f"Checking status of {len(tracked_downloads)} downloads")
-        download_ids = list(tracked_downloads.keys())  # Iterate over a copy of keys
+        logger.info(f"Checking status of {len(tracked_downloads)} tracked downloads")
+        identifiers = list(tracked_downloads.keys())  # Iterate over a copy of keys
 
-        for download_id in download_ids:
-            download_info = tracked_downloads[download_id]
+        for identifier in identifiers:
+            # Check if download is already active locally before querying API again
+            if identifier in self.active_downloads:
+                 logger.debug(f"Skipping status check for locally active download: {identifier}")
+                 continue
+
+            download_info = tracked_downloads.get(identifier) # Use .get for safety
+            if not download_info:
+                logger.warning(f"Tracking info disappeared for identifier: {identifier}. Skipping check.")
+                continue
+
             download_type = download_info["type"]
 
             try:
                 if download_type == "torrent":
-                    self.check_torrent_status(download_id)
+                    self.check_torrent_status(identifier)
                 elif download_type == "usenet":
-                    self.check_usenet_status(download_id)
+                    self.check_usenet_status(identifier)
             except Exception as e:
-                logger.error(f"Error checking status for ID {download_id}: {e}")
+                logger.error(f"Error checking status for identifier {identifier}: {e}")
+
+    def add_item_to_track(self, item_id, item_type, item_name, item_hash=None):
+        """
+        Adds an item from the web UI to the download tracker.
+
+        Args:
+            item_id (str): The specific ID from the TorBox API (e.g., torrent_id, usenetdownload_id).
+            item_type (str): 'torrent' or 'usenet'.
+            item_name (str): The name of the download item.
+            item_hash (str, optional): The hash of the item, if available.
+
+        Returns:
+            bool: True if tracking was initiated, False otherwise (e.g., already tracked).
+        """
+        # Use the specific ID if available, otherwise fall back to hash as the primary identifier
+        # Ensure identifier is a string
+        identifier = str(item_id) if item_id else str(item_hash)
+        if not identifier:
+            logger.error(f"Cannot track item '{item_name}': Missing both ID and Hash.")
+            return False
+
+        logger.info(f"Attempting to track item via Web UI: Identifier={identifier}, Type={item_type}, Name={item_name}")
+
+        # Call the updated track_download method
+        # Pass None for original_file as it's not applicable here
+        # Pass both item_id and item_hash so they are stored in tracking_info
+        success = self.download_tracker.track_download(
+            identifier=identifier,
+            download_type=item_type,
+            file_stem=item_name,
+            original_file=None,
+            download_id=item_id,
+            download_hash=item_hash
+        )
+        return success
 
     def run(self):
         """

@@ -1,7 +1,7 @@
 import requests
 import json
 import logging
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, RetryError
 
 logger = logging.getLogger(__name__)
 
@@ -26,16 +26,9 @@ class TorBoxAPIClient:
         self.max_retries = max_retries
         self.api_key = api_key
 
-    @retry(
-        stop=stop_after_attempt(lambda context: context.api_client.max_retries + 1),
-        wait=wait_fixed(5),
-        retry_error_callback=lambda retry_state: setattr(
-            retry_state.outcome, "api_client", retry_state.args[0]
-        ),
-    )
     def _post(self, endpoint, payload=None, files=None):
         """
-        Makes a POST request to the TorBox API.
+        Makes a POST request to the TorBox API with retry logic.
 
         Args:
             endpoint (str): The API endpoint.
@@ -50,29 +43,31 @@ class TorBoxAPIClient:
             requests.exceptions.RequestException: If there is a problem with the request.
         """
         url = f"{self.api_base}{endpoint}"
-        try:
+        
+        @retry(
+            stop=stop_after_attempt(self.max_retries + 1),
+            wait=wait_fixed(5),
+            reraise=True
+        )
+        def _do_post():
             response = requests.post(
                 url, headers=self.headers, data=payload, files=files
             )
-            response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status()
             return response.json()
+        
+        try:
+            return _do_post()
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error calling API {url}: {e} - {response.text}")
+            logger.error(f"HTTP error calling API {url}: {e} - {e.response.text if hasattr(e, 'response') else 'No response'}")
             raise
         except requests.exceptions.RequestException as e:
             logger.error(f"Request exception calling API {url}: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(lambda context: context.api_client.max_retries + 1),
-        wait=wait_fixed(5),
-        retry_error_callback=lambda retry_state: setattr(
-            retry_state.outcome, "api_client", retry_state.args[0]
-        ),
-    )
     def _get(self, endpoint, params=None):
         """
-        Makes a GET request to the TorBox API.
+        Makes a GET request to the TorBox API with retry logic.
 
         Args:
             endpoint (str): The API endpoint.
@@ -86,12 +81,21 @@ class TorBoxAPIClient:
             requests.exceptions.RequestException: If there is a problem with the request.
         """
         url = f"{self.api_base}{endpoint}"
-        try:
+        
+        @retry(
+            stop=stop_after_attempt(self.max_retries + 1),
+            wait=wait_fixed(5),
+            reraise=True
+        )
+        def _do_get():
             response = requests.get(url, headers=self.headers, params=params)
             response.raise_for_status()
             return response.json()
+        
+        try:
+            return _do_get()
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error calling API {url}: {e} - {response.text}")
+            logger.error(f"HTTP error calling API {url}: {e} - {e.response.text if hasattr(e, 'response') else 'No response'}")
             raise
         except requests.exceptions.RequestException as e:
             logger.error(f"Request exception calling API {url}: {e}")
@@ -127,18 +131,37 @@ class TorBoxAPIClient:
         endpoint = "/torrents/createtorrent"
         return self._post(endpoint, payload=payload)
 
-    def get_torrent_list(self, query_param):
+    def _parse_query_string(self, query_param):
+        """
+        Parses a query string into a dictionary.
+
+        Args:
+            query_param (str): Query string like "key1=value1&key2=value2".
+
+        Returns:
+            dict: Parsed parameters as a dictionary.
+        """
+        params = {}
+        if query_param:
+            for param in query_param.split('&'):
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    params[key] = value
+        return params if params else None
+
+    def get_torrent_list(self, query_param=None):
         """
         Retrieves the list of torrents from the TorBox API.
 
         Args:
-            query_param (str): Query parameters for filtering the list.
+            query_param (str, optional): Query parameters for filtering the list.
 
         Returns:
             dict: The API response.
         """
         endpoint = "/torrents/mylist"
-        return self._get(f"{endpoint}?{query_param}")
+        params = self._parse_query_string(query_param)
+        return self._get(endpoint, params=params)
 
     def request_torrent_download_link(self, torrent_id):
         """
@@ -171,18 +194,19 @@ class TorBoxAPIClient:
             files = {"file": (file_name, f, "application/x-nzb")}
             return self._post(endpoint, payload=payload, files=files)
 
-    def get_usenet_list(self, query_param):
+    def get_usenet_list(self, query_param=None):
         """
         Retrieves the list of usenet downloads from the TorBox API.
 
         Args:
-            query_param (str): Query parameters for filtering the list.
+            query_param (str, optional): Query parameters for filtering the list.
 
         Returns:
             dict: The API response.
         """
         endpoint = "/usenet/mylist"
-        return self._get(f"{endpoint}?{query_param}")
+        params = self._parse_query_string(query_param)
+        return self._get(endpoint, params=params)
 
     def request_usenet_download_link(self, usenet_id):
         """
