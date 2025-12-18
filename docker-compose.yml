@@ -4,12 +4,15 @@ services:
     image: torbox_auto_downloader:local
     user: "99:100"
     volumes:
-      - ${HOST_WATCH_PATH}:/app/watch
-      - ${HOST_DOWNLOAD_PATH}:/app/downloads
+      - ${HOST_WATCH_PATH}:${CONTAINER_WATCH_DIR}
+      - ${HOST_DOWNLOAD_PATH}:${CONTAINER_DOWNLOAD_DIR}
     env_file:
       - .env
     environment:
       # Override API base/version if needed (defaults in .env)
-      - TORBOX_API_BASE=${TORBOX_API_BASE:-https://api.torbox.app}
-      - TORBOX_API_VERSION=${TORBOX_API_VERSION:-v1}
+      - TORBOX_API_BASE=${TORBOX_API_BASE}
+      - TORBOX_API_VERSION=${TORBOX_API_VERSION}
+      # Pass container paths to the application
+      - WATCH_DIR=${CONTAINER_WATCH_DIR}
+      - DOWNLOAD_DIR=${CONTAINER_DOWNLOAD_DIR}
     restart: unless-stopped

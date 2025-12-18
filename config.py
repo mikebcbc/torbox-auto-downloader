@@ -11,32 +11,31 @@ class Config:
     TORBOX_API_BASE = os.getenv("TORBOX_API_BASE", "https://api.torbox.app")
     TORBOX_API_VERSION = os.getenv("TORBOX_API_VERSION", "v1")
     
-    # Check if using dual directory mode (Sonarr/Radarr specific paths)
-    # If any of the specific paths are set, we're in dual directory mode
-    _radarr_watch = os.getenv("RADARR_WATCH_DIR")
-    _radarr_download = os.getenv("RADARR_DOWNLOAD_DIR")
-    _sonarr_watch = os.getenv("SONARR_WATCH_DIR")
-    _sonarr_download = os.getenv("SONARR_DOWNLOAD_DIR")
+    # Base directories (container paths)
+    _base_watch = os.getenv("WATCH_DIR", "/app/watch")
+    _base_download = os.getenv("DOWNLOAD_DIR", "/app/downloads")
     
-    # Legacy single directory mode
-    _legacy_watch = os.getenv("WATCH_DIR")
-    _legacy_download = os.getenv("DOWNLOAD_DIR")
+    # Subdirectory names (just the suffix, not full paths)
+    _radarr_watch_subdir = os.getenv("RADARR_WATCH_SUBDIR")
+    _radarr_download_subdir = os.getenv("RADARR_DOWNLOAD_SUBDIR")
+    _sonarr_watch_subdir = os.getenv("SONARR_WATCH_SUBDIR")
+    _sonarr_download_subdir = os.getenv("SONARR_DOWNLOAD_SUBDIR")
     
     # Determine if we're in dual directory mode
-    DUAL_DIRECTORY_MODE = any([_radarr_watch, _radarr_download, _sonarr_watch, _sonarr_download])
+    DUAL_DIRECTORY_MODE = any([_radarr_watch_subdir, _radarr_download_subdir, _sonarr_watch_subdir, _sonarr_download_subdir])
     
     if DUAL_DIRECTORY_MODE:
-        # Dual directory mode - separate paths for Radarr and Sonarr
-        RADARR_WATCH_DIR = Path(_radarr_watch or "/app/watch/radarr")
-        RADARR_DOWNLOAD_DIR = Path(_radarr_download or "/app/downloads/radarr")
-        SONARR_WATCH_DIR = Path(_sonarr_watch or "/app/watch/sonarr")
-        SONARR_DOWNLOAD_DIR = Path(_sonarr_download or "/app/downloads/sonarr")
+        # Dual directory mode - append subdirectories to base paths
+        RADARR_WATCH_DIR = Path(_base_watch) / (_radarr_watch_subdir or "radarr")
+        RADARR_DOWNLOAD_DIR = Path(_base_download) / (_radarr_download_subdir or "radarr")
+        SONARR_WATCH_DIR = Path(_base_watch) / (_sonarr_watch_subdir or "sonarr")
+        SONARR_DOWNLOAD_DIR = Path(_base_download) / (_sonarr_download_subdir or "sonarr")
     else:
-        # Legacy single directory mode - use same paths for both (no subdirectories)
-        RADARR_WATCH_DIR = Path(_legacy_watch or "/app/watch")
-        RADARR_DOWNLOAD_DIR = Path(_legacy_download or "/app/downloads")
-        SONARR_WATCH_DIR = Path(_legacy_watch or "/app/watch")
-        SONARR_DOWNLOAD_DIR = Path(_legacy_download or "/app/downloads")
+        # Legacy single directory mode - use base paths directly (no subdirectories)
+        RADARR_WATCH_DIR = Path(_base_watch)
+        RADARR_DOWNLOAD_DIR = Path(_base_download)
+        SONARR_WATCH_DIR = Path(_base_watch)
+        SONARR_DOWNLOAD_DIR = Path(_base_download)
     
     WATCH_INTERVAL = int(os.getenv("WATCH_INTERVAL", 60))
     CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 300))
