@@ -41,6 +41,7 @@ class Config:
     WATCH_INTERVAL = int(os.getenv("WATCH_INTERVAL", 60))
     CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 300))
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 2))
+    MAX_STATUS_CHECK_FAILURES = int(os.getenv("MAX_STATUS_CHECK_FAILURES", 5))
     ALLOW_ZIP = os.getenv("ALLOW_ZIP", "true").lower() == "true"
     SEED_PREFERENCE = int(os.getenv("SEED_PREFERENCE", 1))
     POST_PROCESSING = int(os.getenv("POST_PROCESSING", -1))

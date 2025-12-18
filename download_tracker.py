@@ -53,11 +53,37 @@ class DownloadTracker:
             "id": download_id, # Store the specific API ID if provided
             "hash": download_hash, # Store the hash if provided
             "download_dir": str(download_dir) if download_dir else None,
+            "failure_count": 0,  # Track consecutive failures
         }
         logger.info(
             f"Tracking new {download_type} download: Identifier: {identifier}, Name: {file_stem}, Dest: {download_dir}"
         )
         return True
+
+    def increment_failure_count(self, identifier):
+        """
+        Increments the failure count for a download.
+
+        Args:
+            identifier (str): The identifier of the download.
+
+        Returns:
+            int: The new failure count, or None if download not found.
+        """
+        if str(identifier) in self.download_tracking:
+            self.download_tracking[str(identifier)]["failure_count"] += 1
+            return self.download_tracking[str(identifier)]["failure_count"]
+        return None
+
+    def reset_failure_count(self, identifier):
+        """
+        Resets the failure count for a download (on successful check).
+
+        Args:
+            identifier (str): The identifier of the download.
+        """
+        if str(identifier) in self.download_tracking:
+            self.download_tracking[str(identifier)]["failure_count"] = 0
 
     def get_tracked_downloads(self):
         """

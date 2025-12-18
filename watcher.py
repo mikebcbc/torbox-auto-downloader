@@ -234,6 +234,9 @@ class TorBoxWatcherApp:
             
             logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
 
+            # Reset failure count on successful API call
+            self.download_tracker.reset_failure_count(identifier)
+
             # Extract download data from response
             download_data = None
             if "data" in status_data:
@@ -275,6 +278,16 @@ class TorBoxWatcherApp:
 
         except Exception as e:
             logger.error(f"Error checking {download_type} status for identifier {identifier}: {e}")
+            
+            # Increment failure count
+            failure_count = self.download_tracker.increment_failure_count(identifier)
+            
+            if failure_count and failure_count >= self.config.MAX_STATUS_CHECK_FAILURES:
+                logger.error(
+                    f"Max status check failures ({self.config.MAX_STATUS_CHECK_FAILURES}) reached for "
+                    f"{download_type} identifier {identifier}. Removing from tracking."
+                )
+                self.download_tracker.remove_tracked_download(identifier)
         
         return False
 

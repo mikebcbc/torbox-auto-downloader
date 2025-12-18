@@ -16,6 +16,7 @@ services:
       - WATCH_INTERVAL=60
       - CHECK_INTERVAL=300
       - MAX_RETRIES=2
+      - MAX_STATUS_CHECK_FAILURES=5
       - ALLOW_ZIP=true
       - SEED_PREFERENCE=1
       - POST_PROCESSING=-1
