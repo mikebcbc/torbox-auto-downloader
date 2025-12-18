@@ -16,29 +16,33 @@ This project automatically downloads torrents and NZBs from a watch directory us
     cp .env.example .env
     ```
 
-2.  **Edit the `.env` file** and set your `TORBOX_API_KEY`:
+2.  **Edit the `.env` file** and configure:
+    - Set your `TORBOX_API_KEY`
+    - Update `HOST_WATCH_PATH` and `HOST_DOWNLOAD_PATH` to match your filesystem
 
+    Example:
     ```bash
     TORBOX_API_KEY=your_actual_api_key_here
+    HOST_WATCH_PATH=/mnt/user/downloads/temp
+    HOST_DOWNLOAD_PATH=/mnt/user/downloads
     ```
 
-3.  Update the volume paths in your `docker-compose.yml` file to match your local filesystem structure. 
+    The host paths will be mounted as `/app/watch` and `/app/downloads` in the container.
 
 **For Dual Directory Mode (Sonarr/Radarr):**
-The default configuration uses separate directories for each:
-- `/mnt/user/downloads/temp` mounted to `/app/watch` in the container
-- `/mnt/user/downloads` mounted to `/app/downloads` in the container
+The default `.env.example` uses separate directories for each application.
+The container paths are configured as:
+- `RADARR_WATCH_DIR=/app/watch/radarr` and `RADARR_DOWNLOAD_DIR=/app/downloads/radarr`
+- `SONARR_WATCH_DIR=/app/watch/sonarr` and `SONARR_DOWNLOAD_DIR=/app/downloads/sonarr`
 
-The application will automatically create and watch subdirectories:
-- `/app/watch/radarr` and `/app/watch/sonarr` for watch folders
-- `/app/downloads/radarr` and `/app/downloads/sonarr` for completed downloads
+The application will automatically create and watch these subdirectories.
 
 **For Legacy Single Directory Mode:**
-If you don't want to separate Sonarr/Radarr downloads, simply use `WATCH_DIR` and `DOWNLOAD_DIR` environment variables and the application will watch/download to those directories directly without creating subdirectories:
-```yaml
-environment:
-  - WATCH_DIR=/app/watch
-  - DOWNLOAD_DIR=/app/downloads
+If you don't want to separate Sonarr/Radarr downloads, edit your `.env` file to use `WATCH_DIR` and `DOWNLOAD_DIR` instead:
+```bash
+# Comment out the Radarr/Sonarr variables and use:
+WATCH_DIR=/app/watch
+DOWNLOAD_DIR=/app/downloads
 ```
 This will watch `/app/watch` and download to `/app/downloads` only (no subdirectories created).
 

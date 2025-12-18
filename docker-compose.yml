@@ -4,8 +4,8 @@ services:
     image: torbox_auto_downloader:local
     user: "99:100"
     volumes:
-      - /mnt/user/downloads/temp:/app/watch
-      - /mnt/user/downloads:/app/downloads
+      - ${HOST_WATCH_PATH}:/app/watch
+      - ${HOST_DOWNLOAD_PATH}:/app/downloads
     env_file:
       - .env
     environment:
