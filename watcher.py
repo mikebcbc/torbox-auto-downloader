@@ -325,11 +325,17 @@ class TorBoxWatcherApp:
             return
 
         try:
-            # Call appropriate API method
+            # Call appropriate API method with zip_link parameter
             if download_type == "torrent":
-                download_link_data = self.api_client.request_torrent_download_link(request_id)
+                download_link_data = self.api_client.request_torrent_download_link(
+                    request_id, 
+                    zip_link=self.config.ALLOW_ZIP
+                )
             else:  # usenet
-                download_link_data = self.api_client.request_usenet_download_link(request_id)
+                download_link_data = self.api_client.request_usenet_download_link(
+                    request_id,
+                    zip_link=self.config.ALLOW_ZIP
+                )
 
             if download_link_data.get("success", False) and "data" in download_link_data:
                 download_url = download_link_data["data"]
