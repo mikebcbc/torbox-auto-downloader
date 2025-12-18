@@ -42,7 +42,7 @@ class Config:
     CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", 300))
     MAX_RETRIES = int(os.getenv("MAX_RETRIES", 2))
     MAX_STATUS_CHECK_FAILURES = int(os.getenv("MAX_STATUS_CHECK_FAILURES", 5))
-    ALLOW_ZIP = os.getenv("ALLOW_ZIP", "true").lower() == "true"
+    ALLOW_ZIP = os.getenv("ALLOW_ZIP", "false").lower() == "true"
     SEED_PREFERENCE = int(os.getenv("SEED_PREFERENCE", 1))
     POST_PROCESSING = int(os.getenv("POST_PROCESSING", -1))
     QUEUE_IMMEDIATELY = os.getenv("QUEUE_IMMEDIATELY", "false").lower() == "true"

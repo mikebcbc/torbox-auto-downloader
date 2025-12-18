@@ -17,7 +17,7 @@ services:
       - CHECK_INTERVAL=300
       - MAX_RETRIES=2
       - MAX_STATUS_CHECK_FAILURES=5
-      - ALLOW_ZIP=true
+      - ALLOW_ZIP=false
       - SEED_PREFERENCE=1
       - POST_PROCESSING=-1
       - QUEUE_IMMEDIATELY=false
