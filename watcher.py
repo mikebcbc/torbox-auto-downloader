@@ -469,47 +469,6 @@ class TorBoxWatcherApp:
             except Exception as e:
                 logger.error(f"Error checking status for identifier {identifier}: {e}")
 
-    def add_item_to_track(self, item_id, item_type, item_name, item_hash=None, download_dir=None):
-        """
-        Adds an item from the web UI to the download tracker.
-
-        Args:
-            item_id (str): The specific ID from the TorBox API (e.g., torrent_id, usenetdownload_id).
-            item_type (str): 'torrent' or 'usenet'.
-            item_name (str): The name of the download item.
-            item_hash (str, optional): The hash of the item, if available.
-            download_dir (Path, optional): The destination directory. Defaults to RADARR_DOWNLOAD_DIR if not specified.
-
-        Returns:
-            bool: True if tracking was initiated, False otherwise (e.g., already tracked).
-        """
-        # Use the specific ID if available, otherwise fall back to hash as the primary identifier
-        # Ensure identifier is a string
-        identifier = str(item_id) if item_id else str(item_hash)
-        if not identifier:
-            logger.error(f"Cannot track item '{item_name}': Missing both ID and Hash.")
-            return False
-        
-        # Default to Radarr download directory if not specified
-        if not download_dir:
-            download_dir = self.config.RADARR_DOWNLOAD_DIR
-
-        logger.info(f"Attempting to track item via Web UI: Identifier={identifier}, Type={item_type}, Name={item_name}, Dest={download_dir}")
-
-        # Call the updated track_download method
-        # Pass None for original_file as it's not applicable here
-        # Pass both item_id and item_hash so they are stored in tracking_info
-        success = self.download_tracker.track_download(
-            identifier=identifier,
-            download_type=item_type,
-            file_stem=item_name,
-            original_file=None,
-            download_id=item_id,
-            download_hash=item_hash,
-            download_dir=download_dir
-        )
-        return success
-
     def run(self):
         """
         Main execution loop of the TorBoxWatcherApp.
