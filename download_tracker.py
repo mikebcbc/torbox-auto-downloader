@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -116,3 +116,39 @@ class DownloadTracker:
             dict: Tracking information for the download, or None if not found.
         """
         return self.download_tracking.get(str(identifier))
+
+    def cleanup_old_downloads(self, max_age_hours=24):
+        """
+        Removes downloads that have been tracked for longer than max_age_hours.
+        This prevents memory leaks from downloads that never complete.
+
+        Args:
+            max_age_hours (int): Maximum age in hours before removing a download. Defaults to 24.
+
+        Returns:
+            int: Number of downloads removed.
+        """
+        now = datetime.now()
+        to_remove = []
+        
+        for identifier, info in self.download_tracking.items():
+            try:
+                submitted_at = datetime.fromisoformat(info["submitted_at"])
+                age = now - submitted_at
+                
+                if age > timedelta(hours=max_age_hours):
+                    to_remove.append(identifier)
+                    logger.warning(
+                        f"Removing stale download {identifier} ({info['name']}) - "
+                        f"tracked for {age.total_seconds()/3600:.1f} hours"
+                    )
+            except (KeyError, ValueError) as e:
+                logger.error(f"Error checking age of download {identifier}: {e}")
+        
+        for identifier in to_remove:
+            del self.download_tracking[identifier]
+        
+        if to_remove:
+            logger.info(f"Cleaned up {len(to_remove)} stale downloads")
+        
+        return len(to_remove)

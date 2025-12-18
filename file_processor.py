@@ -247,6 +247,7 @@ class FileProcessor:
         """
         self.progress_interval = progress_interval
         self.active_extract_stats = {}  # Track active extractions
+        self.session = requests.Session()  # Reuse connections for better performance
 
     def download_file(
         self,
@@ -276,7 +277,7 @@ class FileProcessor:
         timeout = (30, 300)  # (connect timeout, read timeout) in seconds
         
         try:
-            head_response = requests.head(download_url, timeout=timeout)
+            head_response = self.session.head(download_url, timeout=timeout)
             total_size = int(head_response.headers.get("content-length", 0))
 
             content_disposition = head_response.headers.get("Content-Disposition", "")
@@ -318,7 +319,7 @@ class FileProcessor:
                     if downloaded_size > 0:
                         headers['Range'] = f'bytes={downloaded_size}-'
                     
-                    with requests.get(download_url, stream=True, headers=headers, timeout=timeout) as response:
+                    with self.session.get(download_url, stream=True, headers=headers, timeout=timeout) as response:
                         # Accept both 200 (full content) and 206 (partial content)
                         if response.status_code not in [200, 206]:
                             response.raise_for_status()
@@ -333,7 +334,7 @@ class FileProcessor:
                             mode = "ab" if downloaded_size > 0 else "wb"
                         
                         with open(download_path, mode) as f:
-                            for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                            for chunk in response.iter_content(chunk_size=8*1024*1024):  # 8MB chunks for better performance
                                 if chunk:
                                     f.write(chunk)
                                     download_stats.update(len(chunk))

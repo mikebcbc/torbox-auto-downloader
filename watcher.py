@@ -96,24 +96,25 @@ class TorBoxWatcherApp:
             watch_dir (Path): The directory to watch
             download_dir (Path): The destination directory for downloads
         """
-        results = []
         for file_path in watch_dir.glob("*"):
             if file_path.is_file():
                 file_extension = file_path.suffix.lower()
                 if file_extension in [".torrent", ".magnet"]:
-                    result = self.process_torrent_file(file_path, download_dir)
-                    results.append(result)
+                    success, _, _ = self.process_torrent_file(file_path, download_dir)
+                    if success:
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Deleted file: {file_path}")
+                        except Exception as e:
+                            logger.error(f"Error deleting file {file_path}: {e}")
                 elif file_extension == ".nzb":
-                    result = self.process_nzb_file(file_path, download_dir)
-                    results.append(result)
-
-        for success, file_path, download_id in results:
-            if success:
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Deleted file: {file_path}")
-                except Exception as e:
-                    logger.error(f"Error deleting file {file_path}: {e}")
+                    success, _, _ = self.process_nzb_file(file_path, download_dir)
+                    if success:
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Deleted file: {file_path}")
+                        except Exception as e:
+                            logger.error(f"Error deleting file {file_path}: {e}")
 
     def _extract_identifier_from_response(self, response_data, download_type):
         """
@@ -175,7 +176,8 @@ class TorBoxWatcherApp:
                     payload["magnet"] = magnet_link
                 response_data = self.api_client.create_torrent_from_magnet(payload)
 
-            logger.debug(f"Torrent API response: {json.dumps(response_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Torrent API response: {json.dumps(response_data)}")
 
             identifier, download_id, download_hash = self._extract_identifier_from_response(
                 response_data, "torrent"
@@ -195,7 +197,7 @@ class TorBoxWatcherApp:
                 return success, file_path, identifier
             else:
                 logger.error(
-                    f"Failed to get download ID for: {file_name}. Response: {json.dumps(response_data)}"
+                    f"Failed to get download ID for: {file_name}. Response: {json.dumps(response_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
                 return False, file_path, None
 
@@ -232,7 +234,8 @@ class TorBoxWatcherApp:
             else:  # usenet
                 status_data = self.api_client.get_usenet_list(query_param)
             
-            logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
 
             # Reset failure count on successful API call
             self.download_tracker.reset_failure_count(identifier)
@@ -355,7 +358,7 @@ class TorBoxWatcherApp:
             else:
                 logger.error(
                     f"Failed to get download URL for {download_type} identifier {identifier} "
-                    f"(request_id: {request_id}): {json.dumps(download_link_data)}"
+                    f"(request_id: {request_id}): {json.dumps(download_link_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
 
         except Exception as e:
@@ -391,7 +394,8 @@ class TorBoxWatcherApp:
             response_data = self.api_client.create_usenet_download(
                 file_name, file_path, payload
             )
-            logger.debug(f"Usenet API response: {json.dumps(response_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Usenet API response: {json.dumps(response_data)}")
 
             identifier, download_id, download_hash = self._extract_identifier_from_response(
                 response_data, "usenet"
@@ -411,7 +415,7 @@ class TorBoxWatcherApp:
                 return success, file_path, identifier
             else:
                 logger.error(
-                    f"Failed to get download ID or hash for NZB: {file_name}. Response: {json.dumps(response_data)}"
+                    f"Failed to get download ID or hash for NZB: {file_name}. Response: {json.dumps(response_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
                 return False, file_path, None
 
@@ -477,10 +481,17 @@ class TorBoxWatcherApp:
         and sleeps for a configured interval.
         """
         logger.info("Starting TorBox Watcher")
+        loop_count = 0
         while True:
             try:
                 self.scan_watch_directory()
                 self.check_download_status()
+                
+                # Clean up stale downloads every 10 loops (prevents memory leaks)
+                loop_count += 1
+                if loop_count % 10 == 0:
+                    self.download_tracker.cleanup_old_downloads(max_age_hours=24)
+                
                 logger.info(
                     f"Waiting {self.config.WATCH_INTERVAL} seconds until next scan"
                 )
