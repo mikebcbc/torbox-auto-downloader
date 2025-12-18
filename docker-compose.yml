@@ -1,5 +1,6 @@
 services:
   torbox:
+    build: .
     image: torbox_auto_downloader:local
     user: "99:100"
     volumes:
