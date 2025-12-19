@@ -99,22 +99,20 @@ class TorBoxWatcherApp:
         for file_path in watch_dir.glob("*"):
             if file_path.is_file():
                 file_extension = file_path.suffix.lower()
+                success = False
+                
                 if file_extension in [".torrent", ".magnet"]:
                     success, _, _ = self.process_torrent_file(file_path, download_dir)
-                    if success:
-                        try:
-                            os.remove(file_path)
-                            logger.info(f"Deleted file: {file_path}")
-                        except Exception as e:
-                            logger.error(f"Error deleting file {file_path}: {e}")
                 elif file_extension == ".nzb":
                     success, _, _ = self.process_nzb_file(file_path, download_dir)
-                    if success:
-                        try:
-                            os.remove(file_path)
-                            logger.info(f"Deleted file: {file_path}")
-                        except Exception as e:
-                            logger.error(f"Error deleting file {file_path}: {e}")
+                
+                # Delete the file after successful processing
+                if success:
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"Deleted file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error deleting file {file_path}: {e}")
 
     def _extract_identifier_from_response(self, response_data, download_type):
         """
@@ -285,7 +283,8 @@ class TorBoxWatcherApp:
                                 logger.info(f"Single file detected: {actual_filename}")
                                 self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=False)
                         else:
-                            # Multiple files: will be a zip so set the extension to .zip
+                            # Multiple files: force ZIP download
+                            logger.info(f"Multiple files detected ({len(files)} files) - forcing ZIP download")
                             actual_filename = f"{download_name}.zip"
                             self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=True)
                     

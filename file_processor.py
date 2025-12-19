@@ -207,28 +207,14 @@ class ExtractStats:
     def print_stats(self):
         """Prints the extraction statistics to the logger."""
         elapsed = self.get_elapsed()
-        progress = self.get_progress()
-        speed = self.get_speed()
 
         stats = [
             f"Extracting: {self.zip_path.name}",
             f"Elapsed: {_format_time(elapsed)}",
         ]
 
-        # if progress is not None:
-        #     stats.append(f"Progress: {progress:.1f}%")
-        #     bar_length = 20
-        #     filled_length = int(bar_length * progress / 100)
-        #     bar = "█" * filled_length + "░" * (bar_length - filled_length)
-        #     stats.append(f"[{bar}]")
-
-        # stats.append(f"Files: {self.extracted_files}")
         if self.total_files:
             stats.append(f"Total files: {self.total_files}")
-        # stats.append(f"Extracted: {humanize.naturalsize(self.extracted_size)}")
-        # if self.total_size:
-        #     stats.append(f"Total size: {humanize.naturalsize(self.total_size)}")
-        # stats.append(f"Speed: {humanize.naturalsize(speed)}/s")
 
         logger.info(" | ".join(stats))
 
