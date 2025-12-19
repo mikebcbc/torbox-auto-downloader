@@ -285,10 +285,29 @@ class FileProcessor:
             if filename_match:
                 filename = filename_match.group(1)
             else:
+                # No Content-Disposition, try to get extension from URL or content type
                 content_type = head_response.headers.get("Content-Type", "")
-                if "zip" in content_type:
+                
+                # Try to extract extension from the download URL
+                url_path = download_url.split('?')[0]  # Remove query parameters
+                url_extension = Path(url_path).suffix
+                
+                if url_extension and len(url_extension) <= 5:  # Reasonable extension length
+                    # Use the extension from URL
+                    if download_name.endswith(url_extension):
+                        filename = download_name  # Already has correct extension
+                    else:
+                        filename = f"{download_name}{url_extension}"
+                elif "zip" in content_type:
                     filename = f"{download_name}.zip"
                 else:
+                    # Fallback: use download_name as-is (might already have extension)
+                    # Log a warning if it doesn't have an extension
+                    if not Path(download_name).suffix:
+                        logger.warning(
+                            f"Could not determine file extension for {download_name}. "
+                            f"File may be saved without an extension. Content-Type: {content_type}"
+                        )
                     filename = download_name
             download_path = (
                 download_path.parent / filename
