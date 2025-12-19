@@ -85,6 +85,21 @@ class DownloadTracker:
         if str(identifier) in self.download_tracking:
             self.download_tracking[str(identifier)]["failure_count"] = 0
 
+    def update_filename(self, identifier, filename):
+        """
+        Updates the filename for a tracked download.
+
+        Args:
+            identifier (str): The identifier of the download.
+            filename (str): The new filename to use.
+        """
+        if str(identifier) in self.download_tracking:
+            old_name = self.download_tracking[str(identifier)]["name"]
+            self.download_tracking[str(identifier)]["name"] = filename
+            logger.info(f"Updated filename for {identifier}: {old_name} -> {filename}")
+        else:
+            logger.warning(f"Cannot update filename for unknown identifier: {identifier}")
+
     def get_tracked_downloads(self):
         """
         Returns all tracked downloads.

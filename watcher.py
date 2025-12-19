@@ -269,6 +269,32 @@ class TorBoxWatcherApp:
 
                 # Check if download is ready
                 if download_data.get("download_present", False):
+                    # Determine the appropriate filename based on file count
+                    files = download_data.get("files", [])
+                    actual_filename = None
+                    
+                    if files and len(files) > 0:
+                        # Get torrent/download name from API
+                        download_name = download_data.get("name", tracking_info["name"])
+                        
+                        if len(files) == 1:
+                            # Single file: use the actual filename with extension
+                            actual_filename = files[0].get("short_name") or files[0].get("name", "")
+                            if actual_filename:
+                                # If it's a path (e.g., "folder/file.mkv"), get just the filename
+                                actual_filename = Path(actual_filename).name
+                                logger.info(f"Single file detected: {actual_filename}")
+                        else:
+                            # Multiple files: TorBox will return a ZIP regardless of ALLOW_ZIP setting
+                            # (a single download URL can only serve one file, so multi-file must be zipped)
+                            logger.info(f"Multiple files detected ({len(files)} files)")
+                            actual_filename = f"{download_name}.zip"
+                            logger.info(f"Will download as ZIP: {actual_filename}")
+                        
+                        if actual_filename:
+                            # Update tracker with the determined filename
+                            self.download_tracker.update_filename(identifier, actual_filename)
+                    
                     if download_type == "torrent":
                         self.request_torrent_download(identifier)
                     else:  # usenet
