@@ -271,7 +271,6 @@ class TorBoxWatcherApp:
                 if download_data.get("download_present", False):
                     # Determine the appropriate filename based on file count
                     files = download_data.get("files", [])
-                    actual_filename = None
                     
                     if files and len(files) > 0:
                         # Get torrent/download name from API
@@ -284,16 +283,11 @@ class TorBoxWatcherApp:
                                 # If it's a path (e.g., "folder/file.mkv"), get just the filename
                                 actual_filename = Path(actual_filename).name
                                 logger.info(f"Single file detected: {actual_filename}")
+                                self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=False)
                         else:
-                            # Multiple files: TorBox will return a ZIP regardless of ALLOW_ZIP setting
-                            # (a single download URL can only serve one file, so multi-file must be zipped)
-                            logger.info(f"Multiple files detected ({len(files)} files)")
+                            # Multiple files: will be a zip so set the extension to .zip
                             actual_filename = f"{download_name}.zip"
-                            logger.info(f"Will download as ZIP: {actual_filename}")
-                        
-                        if actual_filename:
-                            # Update tracker with the determined filename
-                            self.download_tracker.update_filename(identifier, actual_filename)
+                            self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=True)
                     
                     if download_type == "torrent":
                         self.request_torrent_download(identifier)
@@ -353,17 +347,25 @@ class TorBoxWatcherApp:
             logger.error(f"No download directory found for {download_type} identifier {identifier}")
             return
 
+        # Check if this is a multi-file download - if so, force zip_link=true
+        is_multi_file = tracking_info.get("is_multi_file", False)
+        if is_multi_file:
+            zip_link = True
+            logger.info(f"Multi-file download detected for {identifier} - forcing ZIP download")
+        else:
+            zip_link = self.config.ALLOW_ZIP
+
         try:
             # Call appropriate API method with zip_link parameter
             if download_type == "torrent":
                 download_link_data = self.api_client.request_torrent_download_link(
                     request_id, 
-                    zip_link=self.config.ALLOW_ZIP
+                    zip_link=zip_link
                 )
             else:  # usenet
                 download_link_data = self.api_client.request_usenet_download_link(
                     request_id,
-                    zip_link=self.config.ALLOW_ZIP
+                    zip_link=zip_link
                 )
 
             if download_link_data.get("success", False) and "data" in download_link_data:

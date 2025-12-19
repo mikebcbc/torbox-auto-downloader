@@ -24,6 +24,7 @@ class DownloadTracker:
         download_id=None,
         download_hash=None,
         download_dir=None,
+        is_multi_file=False,
     ):
         """
         Tracks a new download. Uses the provided identifier as the primary key.
@@ -37,6 +38,7 @@ class DownloadTracker:
             download_id (str, optional): The download ID from the API (e.g., torrent_id). Defaults to None.
             download_hash (str, optional): The download hash from the API. Defaults to None.
             download_dir (Path, optional): The destination directory for this download. Defaults to None.
+            is_multi_file (bool, optional): Whether this download contains multiple files. Defaults to False.
 
         Returns:
             bool: True if tracking was successfully initiated, False if already tracked.
@@ -54,6 +56,7 @@ class DownloadTracker:
             "hash": download_hash, # Store the hash if provided
             "download_dir": str(download_dir) if download_dir else None,
             "failure_count": 0,  # Track consecutive failures
+            "is_multi_file": is_multi_file,  # Track if this is a multi-file download
         }
         logger.info(
             f"Tracking new {download_type} download: Identifier: {identifier}, Name: {file_stem}, Dest: {download_dir}"
@@ -85,18 +88,20 @@ class DownloadTracker:
         if str(identifier) in self.download_tracking:
             self.download_tracking[str(identifier)]["failure_count"] = 0
 
-    def update_filename(self, identifier, filename):
+    def update_filename(self, identifier, filename, is_multi_file=False):
         """
         Updates the filename for a tracked download.
 
         Args:
             identifier (str): The identifier of the download.
             filename (str): The new filename to use.
+            is_multi_file (bool): Whether this is a multi-file download (for forcing ZIP).
         """
         if str(identifier) in self.download_tracking:
             old_name = self.download_tracking[str(identifier)]["name"]
             self.download_tracking[str(identifier)]["name"] = filename
-            logger.info(f"Updated filename for {identifier}: {old_name} -> {filename}")
+            self.download_tracking[str(identifier)]["is_multi_file"] = is_multi_file
+            logger.info(f"Updated filename for {identifier}: {old_name} -> {filename}{' (multi-file)' if is_multi_file else ''}")
         else:
             logger.warning(f"Cannot update filename for unknown identifier: {identifier}")
 
