@@ -207,28 +207,14 @@ class ExtractStats:
     def print_stats(self):
         """Prints the extraction statistics to the logger."""
         elapsed = self.get_elapsed()
-        progress = self.get_progress()
-        speed = self.get_speed()
 
         stats = [
             f"Extracting: {self.zip_path.name}",
             f"Elapsed: {_format_time(elapsed)}",
         ]
 
-        # if progress is not None:
-        #     stats.append(f"Progress: {progress:.1f}%")
-        #     bar_length = 20
-        #     filled_length = int(bar_length * progress / 100)
-        #     bar = "█" * filled_length + "░" * (bar_length - filled_length)
-        #     stats.append(f"[{bar}]")
-
-        # stats.append(f"Files: {self.extracted_files}")
         if self.total_files:
             stats.append(f"Total files: {self.total_files}")
-        # stats.append(f"Extracted: {humanize.naturalsize(self.extracted_size)}")
-        # if self.total_size:
-        #     stats.append(f"Total size: {humanize.naturalsize(self.total_size)}")
-        # stats.append(f"Speed: {humanize.naturalsize(speed)}/s")
 
         logger.info(" | ".join(stats))
 
@@ -247,6 +233,7 @@ class FileProcessor:
         """
         self.progress_interval = progress_interval
         self.active_extract_stats = {}  # Track active extractions
+        self.session = requests.Session()  # Reuse connections for better performance
 
     def download_file(
         self,
@@ -276,22 +263,15 @@ class FileProcessor:
         timeout = (30, 300)  # (connect timeout, read timeout) in seconds
         
         try:
-            head_response = requests.head(download_url, timeout=timeout)
+            head_response = self.session.head(download_url, timeout=timeout)
             total_size = int(head_response.headers.get("content-length", 0))
 
-            content_disposition = head_response.headers.get("Content-Disposition", "")
-            filename_match = re.search(r'filename="?([^"]+)"?', content_disposition)
-            if filename_match:
-                filename = filename_match.group(1)
-            else:
-                content_type = head_response.headers.get("Content-Type", "")
-                if "zip" in content_type:
-                    filename = f"{download_name}.zip"
-                else:
-                    filename = download_name
-            download_path = (
-                download_path.parent / filename
-            )  # Ensure filename respects content disposition
+            # The filename comes from the tracker (updated from API response)
+            # We trust the tracker has the correct filename with extension
+            filename = download_name
+            logger.info(f"Using filename from tracker: {filename}")
+            
+            download_path = download_path.parent / filename
             
             # Check if partial download exists
             downloaded_size = 0
@@ -318,7 +298,7 @@ class FileProcessor:
                     if downloaded_size > 0:
                         headers['Range'] = f'bytes={downloaded_size}-'
                     
-                    with requests.get(download_url, stream=True, headers=headers, timeout=timeout) as response:
+                    with self.session.get(download_url, stream=True, headers=headers, timeout=timeout) as response:
                         # Accept both 200 (full content) and 206 (partial content)
                         if response.status_code not in [200, 206]:
                             response.raise_for_status()
@@ -333,7 +313,7 @@ class FileProcessor:
                             mode = "ab" if downloaded_size > 0 else "wb"
                         
                         with open(download_path, mode) as f:
-                            for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB chunks
+                            for chunk in response.iter_content(chunk_size=8*1024*1024):  # 8MB chunks for better performance
                                 if chunk:
                                     f.write(chunk)
                                     download_stats.update(len(chunk))

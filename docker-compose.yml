@@ -4,29 +4,15 @@ services:
     image: torbox_auto_downloader:local
     user: "99:100"
     volumes:
-      - /mnt/user/downloads/temp:/app/watch
-      - /mnt/user/downloads:/app/downloads
+      - ${HOST_WATCH_PATH}:${CONTAINER_WATCH_DIR}
+      - ${HOST_DOWNLOAD_PATH}:${CONTAINER_DOWNLOAD_DIR}
+    env_file:
+      - .env
     environment:
-      - TORBOX_API_KEY=API_KEY
-      - TORBOX_API_BASE=https://api.torbox.app
-      - TORBOX_API_VERSION=v1
-      - RADARR_WATCH_DIR=/app/watch/radarr
-      - RADARR_DOWNLOAD_DIR=/app/downloads/radarr
-      - SONARR_WATCH_DIR=/app/watch/sonarr
-      - SONARR_DOWNLOAD_DIR=/app/downloads/sonarr
-      - WATCH_INTERVAL=60
-      - CHECK_INTERVAL=300
-      - MAX_RETRIES=2
-      - MAX_STATUS_CHECK_FAILURES=5
-      - ALLOW_ZIP=false
-      - SEED_PREFERENCE=1
-      - POST_PROCESSING=-1
-      - QUEUE_IMMEDIATELY=false
-      - PROGRESS_INTERVAL=15
-      - WEB_PORT=5151
-      # Single directory mode: these are ignored unless the above radarr/sonarr variables are not set.
-      - WATCH_DIR=/app/watch
-      - DOWNLOAD_DIR=/app/downloads
-    ports:
-      - "5151:5151"
+      # Override API base/version if needed (defaults in .env)
+      - TORBOX_API_BASE=${TORBOX_API_BASE}
+      - TORBOX_API_VERSION=${TORBOX_API_VERSION}
+      # Pass container paths to the application
+      - WATCH_DIR=${CONTAINER_WATCH_DIR}
+      - DOWNLOAD_DIR=${CONTAINER_DOWNLOAD_DIR}
     restart: unless-stopped

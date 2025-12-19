@@ -10,26 +10,55 @@ This project automatically downloads torrents and NZBs from a watch directory us
 
 ### Configuration
 
-1.  Set the `TORBOX_API_KEY` environment variable in your `docker-compose.yml` file. Replace the placeholder `API_KEY` with your actual Torbox API key.
-2.  Update the volume paths in your `docker-compose.yml` file to match your local filesystem structure. 
+1.  **Create a `.env` file** from the example template:
+
+    ```bash
+    cp .env.example .env
+    ```
+
+2.  **Edit the `.env` file** and configure:
+    - Set your `TORBOX_API_KEY`
+    - Update `HOST_WATCH_PATH` and `HOST_DOWNLOAD_PATH` to match your filesystem
+    - Optionally customize `CONTAINER_WATCH_DIR` and `CONTAINER_DOWNLOAD_DIR` (defaults: `/app/watch` and `/app/downloads`)
+
+    Example:
+    ```bash
+    TORBOX_API_KEY=your_actual_api_key_here
+    HOST_WATCH_PATH=/mnt/user/downloads/temp
+    HOST_DOWNLOAD_PATH=/mnt/user/downloads
+    CONTAINER_WATCH_DIR=/app/watch
+    CONTAINER_DOWNLOAD_DIR=/app/downloads
+    ```
+
+    The host paths will be mounted to the container paths specified.
 
 **For Dual Directory Mode (Sonarr/Radarr):**
-The default configuration uses separate directories for each:
-- `/mnt/user/downloads/temp` mounted to `/app/watch` in the container
-- `/mnt/user/downloads` mounted to `/app/downloads` in the container
+The default `.env.example` uses subdirectory names that get appended to the base container paths.
+With the default configuration:
+- Radarr will use `${CONTAINER_WATCH_DIR}/radarr` and `${CONTAINER_DOWNLOAD_DIR}/radarr`
+- Sonarr will use `${CONTAINER_WATCH_DIR}/sonarr` and `${CONTAINER_DOWNLOAD_DIR}/sonarr`
 
-The application will automatically create and watch subdirectories:
-- `/app/watch/radarr` and `/app/watch/sonarr` for watch folders
-- `/app/downloads/radarr` and `/app/downloads/sonarr` for completed downloads
+Which with defaults becomes:
+- Radarr: `/app/watch/radarr` and `/app/downloads/radarr`
+- Sonarr: `/app/watch/sonarr` and `/app/downloads/sonarr`
+
+You can customize the subdirectory names in your `.env` file:
+```bash
+RADARR_WATCH_SUBDIR=radarr
+RADARR_DOWNLOAD_SUBDIR=radarr
+SONARR_WATCH_SUBDIR=sonarr
+SONARR_DOWNLOAD_SUBDIR=sonarr
+```
 
 **For Legacy Single Directory Mode:**
-If you don't want to separate Sonarr/Radarr downloads, simply use `WATCH_DIR` and `DOWNLOAD_DIR` environment variables and the application will watch/download to those directories directly without creating subdirectories:
-```yaml
-environment:
-  - WATCH_DIR=/app/watch
-  - DOWNLOAD_DIR=/app/downloads
+If you don't want to separate Sonarr/Radarr downloads, comment out all the `*_SUBDIR` variables in your `.env` file:
+```bash
+# RADARR_WATCH_SUBDIR=radarr
+# RADARR_DOWNLOAD_SUBDIR=radarr
+# SONARR_WATCH_SUBDIR=sonarr
+# SONARR_DOWNLOAD_SUBDIR=sonarr
 ```
-This will watch `/app/watch` and download to `/app/downloads` only (no subdirectories created).
+This will watch `${CONTAINER_WATCH_DIR}` and download to `${CONTAINER_DOWNLOAD_DIR}` only (no subdirectories created).
 
 ### Running
 1.  Clone Repo
@@ -58,28 +87,34 @@ This will watch `/app/watch` and download to `/app/downloads` only (no subdirect
 
 ## Configuration (Environment Variables)
 
-| Variable                | Default Value              | Description                                                                                                                                                                                                                            |
-| ----------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TORBOX_API_KEY`        | **(Required)**             | Your TorBox API key.                                                                                                                                                                                                                   |
-| `TORBOX_API_BASE`       | `https://api.torbox.app`  | The base URL of the TorBox API.                                                                                                                                                                                                        |
-| `TORBOX_API_VERSION`    | `v1`                       | The version of the TorBox API.                                                                                                                                                                                                         |
-| `RADARR_WATCH_DIR`      | `/app/watch/radarr`*       | The directory to watch for Radarr torrent, magnet, and NZB files. *Enables dual directory mode.                                                                                                                                       |
-| `RADARR_DOWNLOAD_DIR`   | `/app/downloads/radarr`*   | The directory where Radarr downloaded files will be stored. *Enables dual directory mode.                                                                                                                                              |
-| `SONARR_WATCH_DIR`      | `/app/watch/sonarr`*       | The directory to watch for Sonarr torrent, magnet, and NZB files. *Enables dual directory mode.                                                                                                                                       |
-| `SONARR_DOWNLOAD_DIR`   | `/app/downloads/sonarr`*   | The directory where Sonarr downloaded files will be stored. *Enables dual directory mode.                                                                                                                                              |
-| `WATCH_DIR`             | `/app/watch`               | Legacy single directory mode: watches this directory only. Ignored if any Sonarr/Radarr variables are set.                                                                                                                            |
-| `DOWNLOAD_DIR`          | `/app/downloads`           | Legacy single directory mode: downloads to this directory only. Ignored if any Sonarr/Radarr variables are set.                                                                                                                       |
-| `WATCH_INTERVAL`        | `60`                       | The interval (in seconds) between scans of the watch directories.                                                                                                                                                                     |
-| `CHECK_INTERVAL`        | `300`                      | The interval (in seconds) between checks for the status of downloads.                                                                                                                                                                 |
-| `MAX_RETRIES`           | `2`                        | The maximum number of retries for API calls.                                                                                                                                                                                           |
-| `MAX_STATUS_CHECK_FAILURES` | `5`                    | Maximum consecutive failures when checking download status before removing from tracking. Prevents infinite retry loops on API errors.                                                                                                |
-| `ALLOW_ZIP`             | `false`                    | Whether to allow automatic ZIP compression of downloads from TorBox.                                                                                                                                                                  |
-| `SEED_PREFERENCE`       | `1`                        | Seed preference for torrents (specific to TorBox API).                                                                                                                                                                                 |
-| `POST_PROCESSING`       | `-1`                       | Post-processing setting for usenet downloads (specific to TorBox API).                                                                                                                                                                 |
-| `QUEUE_IMMEDIATELY`     | `false`                    | Whether to queue downloads immediately or add them as paused (specific to TorBox API, behavior may depend on your Torbox subscription. If set to `false` downloads are added as paused, if `true` downloads are added to the queue). |
-| `PROGRESS_INTERVAL`     | `15`                       | The interval (in seconds) for updating download/extraction progress.                                                                                                                                                                   |
+All configuration is managed via the `.env` file. Copy `.env.example` to `.env` and customize as needed.
 
-**Note:** Setting any of `RADARR_WATCH_DIR`, `RADARR_DOWNLOAD_DIR`, `SONARR_WATCH_DIR`, or `SONARR_DOWNLOAD_DIR` enables dual directory mode and causes `WATCH_DIR` and `DOWNLOAD_DIR` to be ignored.
+| Variable                    | Default Value              | Description                                                                                                                                                                                                                            |
+| --------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TORBOX_API_KEY`            | **(Required)**             | Your TorBox API key.                                                                                                                                                                                                                   |
+| `TORBOX_API_BASE`           | `https://api.torbox.app`   | The base URL of the TorBox API.                                                                                                                                                                                                        |
+| `TORBOX_API_VERSION`        | `v1`                       | The version of the TorBox API.                                                                                                                                                                                                         |
+| `HOST_WATCH_PATH`           | **(Required)**             | Host path to mount as the watch directory (e.g., `/mnt/user/downloads/temp`).                                                                                                                                                        |
+| `HOST_DOWNLOAD_PATH`        | **(Required)**             | Host path to mount as the download directory (e.g., `/mnt/user/downloads`).                                                                                                                                                          |
+| `CONTAINER_WATCH_DIR`       | `/app/watch`               | Container path where `HOST_WATCH_PATH` is mounted. Base directory for watching files.                                                                                                                                                |
+| `CONTAINER_DOWNLOAD_DIR`    | `/app/downloads`           | Container path where `HOST_DOWNLOAD_PATH` is mounted. Base directory for downloads.                                                                                                                                                  |
+| `WATCH_DIR`                 | `/app/watch`               | (Deprecated) Use `CONTAINER_WATCH_DIR` instead. Kept for backward compatibility.                                                                                                                                                     |
+| `DOWNLOAD_DIR`              | `/app/downloads`           | (Deprecated) Use `CONTAINER_DOWNLOAD_DIR` instead. Kept for backward compatibility.                                                                                                                                                  |
+| `RADARR_WATCH_SUBDIR`       | `radarr`*                  | Subdirectory appended to `CONTAINER_WATCH_DIR` for Radarr. *Enables dual directory mode.                                                                                                                                             |
+| `RADARR_DOWNLOAD_SUBDIR`    | `radarr`*                  | Subdirectory appended to `CONTAINER_DOWNLOAD_DIR` for Radarr. *Enables dual directory mode.                                                                                                                                          |
+| `SONARR_WATCH_SUBDIR`       | `sonarr`*                  | Subdirectory appended to `CONTAINER_WATCH_DIR` for Sonarr. *Enables dual directory mode.                                                                                                                                             |
+| `SONARR_DOWNLOAD_SUBDIR`    | `sonarr`*                  | Subdirectory appended to `CONTAINER_DOWNLOAD_DIR` for Sonarr. *Enables dual directory mode.                                                                                                                                          |
+| `WATCH_INTERVAL`            | `60`                       | The interval (in seconds) between scans of the watch directories.                                                                                                                                                                     |
+| `CHECK_INTERVAL`            | `300`                      | The interval (in seconds) between checks for the status of downloads.                                                                                                                                                                 |
+| `MAX_RETRIES`               | `2`                        | The maximum number of retries for API calls.                                                                                                                                                                                           |
+| `MAX_STATUS_CHECK_FAILURES` | `5`                        | Maximum consecutive failures when checking download status before removing from tracking. Prevents infinite retry loops on API errors.                                                                                                |
+| `ALLOW_ZIP`                 | `false`                    | Whether to allow automatic ZIP compression of downloads from TorBox.                                                                                                                                                                  |
+| `SEED_PREFERENCE`           | `1`                        | Seed preference for torrents (specific to TorBox API).                                                                                                                                                                                 |
+| `POST_PROCESSING`           | `-1`                       | Post-processing setting for usenet downloads (specific to TorBox API).                                                                                                                                                                 |
+| `QUEUE_IMMEDIATELY`         | `false`                    | Whether to queue downloads immediately or add them as paused (specific to TorBox API, behavior may depend on your Torbox subscription. If set to `false` downloads are added as paused, if `true` downloads are added to the queue). |
+| `PROGRESS_INTERVAL`         | `15`                       | The interval (in seconds) for updating download/extraction progress.                                                                                                                                                                   |
+
+**Note:** Setting any of the `*_SUBDIR` variables enables dual directory mode. When enabled, subdirectories are automatically appended to `CONTAINER_WATCH_DIR` and `CONTAINER_DOWNLOAD_DIR`.
 
 ## Local Development (without Docker)
 
@@ -89,9 +124,15 @@ This will watch `/app/watch` and download to `/app/downloads` only (no subdirect
     pip install -r requirements.txt
     ```
 
-2.  Set the `TORBOX_API_KEY` environment variable and other environment variables as needed, for example in your shell before running.
+2.  **Create a `.env` file** from the example template:
 
-3.  Run the application:
+    ```bash
+    cp .env.example .env
+    ```
+
+3.  **Edit the `.env` file** and set your `TORBOX_API_KEY` and other environment variables as needed.
+
+4.  Run the application:
 
     ```bash
     python main.py

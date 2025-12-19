@@ -25,6 +25,8 @@ class TorBoxAPIClient:
         self.headers = {"Authorization": f"Bearer {api_key}"}
         self.max_retries = max_retries
         self.api_key = api_key
+        self.session = requests.Session()  # Reuse connections for better performance
+        self.session.headers.update(self.headers)
 
     def _post(self, endpoint, payload=None, files=None):
         """
@@ -50,8 +52,8 @@ class TorBoxAPIClient:
             reraise=True
         )
         def _do_post():
-            response = requests.post(
-                url, headers=self.headers, data=payload, files=files
+            response = self.session.post(
+                url, data=payload, files=files
             )
             response.raise_for_status()
             return response.json()
@@ -88,7 +90,7 @@ class TorBoxAPIClient:
             reraise=True
         )
         def _do_get():
-            response = requests.get(url, headers=self.headers, params=params)
+            response = self.session.get(url, params=params)
             response.raise_for_status()
             return response.json()
         

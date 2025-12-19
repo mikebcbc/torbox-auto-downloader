@@ -96,24 +96,23 @@ class TorBoxWatcherApp:
             watch_dir (Path): The directory to watch
             download_dir (Path): The destination directory for downloads
         """
-        results = []
         for file_path in watch_dir.glob("*"):
             if file_path.is_file():
                 file_extension = file_path.suffix.lower()
+                success = False
+                
                 if file_extension in [".torrent", ".magnet"]:
-                    result = self.process_torrent_file(file_path, download_dir)
-                    results.append(result)
+                    success, _, _ = self.process_torrent_file(file_path, download_dir)
                 elif file_extension == ".nzb":
-                    result = self.process_nzb_file(file_path, download_dir)
-                    results.append(result)
-
-        for success, file_path, download_id in results:
-            if success:
-                try:
-                    os.remove(file_path)
-                    logger.info(f"Deleted file: {file_path}")
-                except Exception as e:
-                    logger.error(f"Error deleting file {file_path}: {e}")
+                    success, _, _ = self.process_nzb_file(file_path, download_dir)
+                
+                # Delete the file after successful processing
+                if success:
+                    try:
+                        os.remove(file_path)
+                        logger.info(f"Deleted file: {file_path}")
+                    except Exception as e:
+                        logger.error(f"Error deleting file {file_path}: {e}")
 
     def _extract_identifier_from_response(self, response_data, download_type):
         """
@@ -175,7 +174,8 @@ class TorBoxWatcherApp:
                     payload["magnet"] = magnet_link
                 response_data = self.api_client.create_torrent_from_magnet(payload)
 
-            logger.debug(f"Torrent API response: {json.dumps(response_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Torrent API response: {json.dumps(response_data)}")
 
             identifier, download_id, download_hash = self._extract_identifier_from_response(
                 response_data, "torrent"
@@ -195,7 +195,7 @@ class TorBoxWatcherApp:
                 return success, file_path, identifier
             else:
                 logger.error(
-                    f"Failed to get download ID for: {file_name}. Response: {json.dumps(response_data)}"
+                    f"Failed to get download ID for: {file_name}. Response: {json.dumps(response_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
                 return False, file_path, None
 
@@ -232,7 +232,8 @@ class TorBoxWatcherApp:
             else:  # usenet
                 status_data = self.api_client.get_usenet_list(query_param)
             
-            logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"{download_type.capitalize()} status response: {json.dumps(status_data)}")
 
             # Reset failure count on successful API call
             self.download_tracker.reset_failure_count(identifier)
@@ -266,6 +267,27 @@ class TorBoxWatcherApp:
 
                 # Check if download is ready
                 if download_data.get("download_present", False):
+                    # Determine the appropriate filename based on file count
+                    files = download_data.get("files", [])
+                    
+                    if files and len(files) > 0:
+                        # Get torrent/download name from API
+                        download_name = download_data.get("name", tracking_info["name"])
+                        
+                        if len(files) == 1:
+                            # Single file: use the actual filename with extension
+                            actual_filename = files[0].get("short_name") or files[0].get("name", "")
+                            if actual_filename:
+                                # If it's a path (e.g., "folder/file.mkv"), get just the filename
+                                actual_filename = Path(actual_filename).name
+                                logger.info(f"Single file detected: {actual_filename}")
+                                self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=False)
+                        else:
+                            # Multiple files: force ZIP download
+                            logger.info(f"Multiple files detected ({len(files)} files) - forcing ZIP download")
+                            actual_filename = f"{download_name}.zip"
+                            self.download_tracker.update_filename(identifier, actual_filename, is_multi_file=True)
+                    
                     if download_type == "torrent":
                         self.request_torrent_download(identifier)
                     else:  # usenet
@@ -324,17 +346,25 @@ class TorBoxWatcherApp:
             logger.error(f"No download directory found for {download_type} identifier {identifier}")
             return
 
+        # Check if this is a multi-file download - if so, force zip_link=true
+        is_multi_file = tracking_info.get("is_multi_file", False)
+        if is_multi_file:
+            zip_link = True
+            logger.info(f"Multi-file download detected for {identifier} - forcing ZIP download")
+        else:
+            zip_link = self.config.ALLOW_ZIP
+
         try:
             # Call appropriate API method with zip_link parameter
             if download_type == "torrent":
                 download_link_data = self.api_client.request_torrent_download_link(
                     request_id, 
-                    zip_link=self.config.ALLOW_ZIP
+                    zip_link=zip_link
                 )
             else:  # usenet
                 download_link_data = self.api_client.request_usenet_download_link(
                     request_id,
-                    zip_link=self.config.ALLOW_ZIP
+                    zip_link=zip_link
                 )
 
             if download_link_data.get("success", False) and "data" in download_link_data:
@@ -355,7 +385,7 @@ class TorBoxWatcherApp:
             else:
                 logger.error(
                     f"Failed to get download URL for {download_type} identifier {identifier} "
-                    f"(request_id: {request_id}): {json.dumps(download_link_data)}"
+                    f"(request_id: {request_id}): {json.dumps(download_link_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
 
         except Exception as e:
@@ -391,7 +421,8 @@ class TorBoxWatcherApp:
             response_data = self.api_client.create_usenet_download(
                 file_name, file_path, payload
             )
-            logger.debug(f"Usenet API response: {json.dumps(response_data)}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Usenet API response: {json.dumps(response_data)}")
 
             identifier, download_id, download_hash = self._extract_identifier_from_response(
                 response_data, "usenet"
@@ -411,7 +442,7 @@ class TorBoxWatcherApp:
                 return success, file_path, identifier
             else:
                 logger.error(
-                    f"Failed to get download ID or hash for NZB: {file_name}. Response: {json.dumps(response_data)}"
+                    f"Failed to get download ID or hash for NZB: {file_name}. Response: {json.dumps(response_data) if logger.isEnabledFor(logging.DEBUG) else 'enable debug for details'}"
                 )
                 return False, file_path, None
 
@@ -469,47 +500,6 @@ class TorBoxWatcherApp:
             except Exception as e:
                 logger.error(f"Error checking status for identifier {identifier}: {e}")
 
-    def add_item_to_track(self, item_id, item_type, item_name, item_hash=None, download_dir=None):
-        """
-        Adds an item from the web UI to the download tracker.
-
-        Args:
-            item_id (str): The specific ID from the TorBox API (e.g., torrent_id, usenetdownload_id).
-            item_type (str): 'torrent' or 'usenet'.
-            item_name (str): The name of the download item.
-            item_hash (str, optional): The hash of the item, if available.
-            download_dir (Path, optional): The destination directory. Defaults to RADARR_DOWNLOAD_DIR if not specified.
-
-        Returns:
-            bool: True if tracking was initiated, False otherwise (e.g., already tracked).
-        """
-        # Use the specific ID if available, otherwise fall back to hash as the primary identifier
-        # Ensure identifier is a string
-        identifier = str(item_id) if item_id else str(item_hash)
-        if not identifier:
-            logger.error(f"Cannot track item '{item_name}': Missing both ID and Hash.")
-            return False
-        
-        # Default to Radarr download directory if not specified
-        if not download_dir:
-            download_dir = self.config.RADARR_DOWNLOAD_DIR
-
-        logger.info(f"Attempting to track item via Web UI: Identifier={identifier}, Type={item_type}, Name={item_name}, Dest={download_dir}")
-
-        # Call the updated track_download method
-        # Pass None for original_file as it's not applicable here
-        # Pass both item_id and item_hash so they are stored in tracking_info
-        success = self.download_tracker.track_download(
-            identifier=identifier,
-            download_type=item_type,
-            file_stem=item_name,
-            original_file=None,
-            download_id=item_id,
-            download_hash=item_hash,
-            download_dir=download_dir
-        )
-        return success
-
     def run(self):
         """
         Main execution loop of the TorBoxWatcherApp.
@@ -518,10 +508,17 @@ class TorBoxWatcherApp:
         and sleeps for a configured interval.
         """
         logger.info("Starting TorBox Watcher")
+        loop_count = 0
         while True:
             try:
                 self.scan_watch_directory()
                 self.check_download_status()
+                
+                # Clean up stale downloads every 10 loops (prevents memory leaks)
+                loop_count += 1
+                if loop_count % 10 == 0:
+                    self.download_tracker.cleanup_old_downloads(max_age_hours=24)
+                
                 logger.info(
                     f"Waiting {self.config.WATCH_INTERVAL} seconds until next scan"
                 )
