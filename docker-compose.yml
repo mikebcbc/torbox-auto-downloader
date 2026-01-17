@@ -1,5 +1,6 @@
 services:
   torbox:
+    container_name: torbox-auto-downloader
     build: .
     image: torbox_auto_downloader:local
     user: "99:100"
