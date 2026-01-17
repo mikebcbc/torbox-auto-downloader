@@ -116,7 +116,11 @@ class TorBoxAPIClient:
             dict: The API response.
         """
         endpoint = "/torrents/createtorrent"
+        logger.info(f"Creating torrent - File: {file_name}, Payload: {payload}")
         with open(file_path, "rb") as f:
+            file_size = f.seek(0, 2)  # Get file size
+            f.seek(0)  # Reset to beginning
+            logger.debug(f"Torrent file size: {file_size} bytes")
             files = {"file": (file_name, f, "application/x-bittorrent")}
             return self._post(endpoint, payload=payload, files=files)
 
@@ -131,6 +135,11 @@ class TorBoxAPIClient:
             dict: The API response.
         """
         endpoint = "/torrents/createtorrent"
+        # Log payload but truncate magnet link for readability
+        log_payload = payload.copy()
+        if "magnet" in log_payload and len(log_payload["magnet"]) > 100:
+            log_payload["magnet"] = log_payload["magnet"][:100] + "..."
+        logger.info(f"Creating torrent from magnet - Payload: {log_payload}")
         return self._post(endpoint, payload=payload)
 
     def _parse_query_string(self, query_param):
